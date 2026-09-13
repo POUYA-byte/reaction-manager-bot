@@ -42,7 +42,6 @@ bot.hears(/^تنظیم\s*ریکشن$/, async (ctx) => {
   }
 
   waiting[ctx.from.id] = {
-    chatId: String(ctx.chat.id),
     userId: String(reply.from.id),
     name: reply.from.first_name || "User"
   };
@@ -60,11 +59,7 @@ bot.on("text", async (ctx, next) => {
   const data = waiting[ctx.from.id];
   const rules = loadRules();
 
-  if (!rules[data.chatId]) {
-    rules[data.chatId] = {};
-  }
-
-  rules[data.chatId][data.userId] = {
+  rules[data.userId] = {
     reaction: emoji,
     name: data.name
   };
@@ -72,7 +67,7 @@ bot.on("text", async (ctx, next) => {
   saveRules(rules);
   delete waiting[ctx.from.id];
 
-  ctx.reply(`ثبت شد ${emoji}`);
+  ctx.reply(`ثبت شد ${emoji} (برای همه‌ی گروه‌ها فعاله)`);
 });
 
 // حذف
@@ -83,11 +78,10 @@ bot.hears(/^حذف\s*ریکشن$/, async (ctx) => {
   if (!reply) return ctx.reply("روی پیام شخص ریپلای کن.");
 
   const rules = loadRules();
-  const chatId = String(ctx.chat.id);
   const userId = String(reply.from.id);
 
-  if (rules[chatId]?.[userId]) {
-    delete rules[chatId][userId];
+  if (rules[userId]) {
+    delete rules[userId];
     saveRules(rules);
     return ctx.reply("حذف شد ✅");
   }
@@ -100,13 +94,14 @@ bot.hears(/^لیست\s*ریکشن‌?ها$/, async (ctx) => {
   if (!isOwner(ctx)) return;
 
   const rules = loadRules();
-  const group = rules[String(ctx.chat.id)];
 
-  if (!group) return ctx.reply("لیست خالی است.");
+  if (Object.keys(rules).length === 0) {
+    return ctx.reply("لیست خالی است.");
+  }
 
   let text = "📋 لیست:\n\n";
-  for (const id in group) {
-    text += `${group[id].name} → ${group[id].reaction}\n`;
+  for (const id in rules) {
+    text += `${rules[id].name} → ${rules[id].reaction}\n`;
   }
 
   ctx.reply(text);
@@ -119,7 +114,7 @@ bot.on("message", async (ctx, next) => {
     if (ctx.from.is_bot) return next();
 
     const rules = loadRules();
-    const rule = rules[String(ctx.chat.id)]?.[String(ctx.from.id)];
+    const rule = rules[String(ctx.from.id)];
 
     if (!rule) return next();
 
