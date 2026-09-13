@@ -1,4 +1,4 @@
-require("dotenv").config(); // ← این خط رو اگه نداری اضافه کن، حتماً بالای فایل
+try { require("dotenv").config(); } catch (e) {}
 
 const { Telegraf } = require("telegraf");
 const fs = require("fs");
@@ -6,9 +6,8 @@ const fs = require("fs");
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const OWNER_ID = Number(process.env.OWNER_ID);
-console.log("OWNER_ID from env:", OWNER_ID); // ← اگه NaN چاپ شد، مشکل همینه
-
 const DB_FILE = "rules.json";
+
 const waiting = {};
 
 function loadRules() {
@@ -32,13 +31,12 @@ function isOwner(ctx) {
 }
 
 // تنظیم ریکشن
-bot.hears("تنظیم ریکشن", async (ctx) => {
-  console.log("hears matched. from.id =", ctx.from.id, "OWNER_ID =", OWNER_ID, "isOwner:", isOwner(ctx), "isGroup:", isGroup(ctx));
-
+bot.hears(/^تنظیم\s*ریکشن$/, async (ctx) => {
   if (!isOwner(ctx)) return;
   if (!isGroup(ctx)) return;
 
   const reply = ctx.message.reply_to_message;
+
   if (!reply) {
     return ctx.reply("روی پیام شخص ریپلای کن.");
   }
@@ -46,8 +44,98 @@ bot.hears("تنظیم ریکشن", async (ctx) => {
   waiting[ctx.from.id] = {
     chatId: String(ctx.chat.id),
     userId: String(reply.from.id),
-    name: reply.from.first_name || "User",
+    name: reply.from.first_name || "User"
   };
 
   ctx.reply("ایموجی ریکشن رو بفرست ❤️");
 });
+
+// گرفتن ایموجی
+bot.on("text", async (ctx, next) => {
+  if (!waiting[ctx.from.id]) {
+    return next();
+  }
+
+  const emoji = ctx.message.text.trim();
+  const data = waiting[ctx.from.id];
+  const rules = loadRules();
+
+  if (!rules[data.chatId]) {
+    rules[data.chatId] = {};
+  }
+
+  rules[data.chatId][data.userId] = {
+    reaction: emoji,
+    name: data.name
+  };
+
+  saveRules(rules);
+  delete waiting[ctx.from.id];
+
+  ctx.reply(`ثبت شد ${emoji}`);
+});
+
+// حذف
+bot.hears(/^حذف\s*ریکشن$/, async (ctx) => {
+  if (!isOwner(ctx)) return;
+
+  const reply = ctx.message.reply_to_message;
+  if (!reply) return ctx.reply("روی پیام شخص ریپلای کن.");
+
+  const rules = loadRules();
+  const chatId = String(ctx.chat.id);
+  const userId = String(reply.from.id);
+
+  if (rules[chatId]?.[userId]) {
+    delete rules[chatId][userId];
+    saveRules(rules);
+    return ctx.reply("حذف شد ✅");
+  }
+
+  ctx.reply("چیزی پیدا نشد.");
+});
+
+// لیست
+bot.hears(/^لیست\s*ریکشن‌?ها$/, async (ctx) => {
+  if (!isOwner(ctx)) return;
+
+  const rules = loadRules();
+  const group = rules[String(ctx.chat.id)];
+
+  if (!group) return ctx.reply("لیست خالی است.");
+
+  let text = "📋 لیست:\n\n";
+  for (const id in group) {
+    text += `${group[id].name} → ${group[id].reaction}\n`;
+  }
+
+  ctx.reply(text);
+});
+
+// ریکشن خودکار
+bot.on("message", async (ctx, next) => {
+  try {
+    if (!isGroup(ctx)) return next();
+    if (ctx.from.is_bot) return next();
+
+    const rules = loadRules();
+    const rule = rules[String(ctx.chat.id)]?.[String(ctx.from.id)];
+
+    if (!rule) return next();
+
+    await ctx.telegram.callApi("setMessageReaction", {
+      chat_id: ctx.chat.id,
+      message_id: ctx.message.message_id,
+      reaction: [{ type: "emoji", emoji: rule.reaction }]
+    });
+  } catch (e) {
+    console.log(e.message);
+  }
+});
+
+bot.launch()
+  .then(() => console.log("Bot Started"))
+  .catch(console.log);
+
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
