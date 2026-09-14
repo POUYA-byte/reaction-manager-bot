@@ -134,3 +134,55 @@ bot.launch()
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
+// =====================================================
+// ⏰ آپدیت خودکار ساعت در اسم ربات (هر ۵ دقیقه، رند شده)
+// =====================================================
+
+function formatClock() {
+  const now = new Date();
+
+  // گرفتن ساعت و دقیقه به وقت تهران
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tehran",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  let hour = parseInt(parts.find(p => p.type === "hour").value, 10);
+  let minute = parseInt(parts.find(p => p.type === "minute").value, 10);
+
+  // رند کردن دقیقه به نزدیک‌ترین مضرب ۵
+  minute = Math.round(minute / 5) * 5;
+
+  if (minute === 60) {
+    minute = 0;
+    hour = (hour + 1) % 24;
+  }
+
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+
+  return `${hh}:${mm}`;
+}
+
+async function updateBotNameWithClock() {
+  try {
+    const clock = formatClock();
+    const newName = `Miku(کیکو) ${clock}`;
+
+    await bot.telegram.callApi("setMyName", {
+      name: newName,
+    });
+
+    console.log("⏰ NAME UPDATED:", newName);
+  } catch (err) {
+    console.error("❌ NAME UPDATE FAILED:", err.message || err);
+  }
+}
+
+// اولین بار همون لحظه اجرا بشه
+updateBotNameWithClock();
+
+// هر ۵ دقیقه یک‌بار آپدیت بشه
+setInterval(updateBotNameWithClock, 5 * 60 * 1000);
